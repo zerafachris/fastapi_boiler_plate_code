@@ -1,13 +1,20 @@
 import schemas
 import models
-from models import User
+import jwt
+from datetime import datetime 
+from models import User,TokenTable
 from database import Base, engine, SessionLocal
 from sqlalchemy.orm import Session
-from passlib.context import CryptContext
 from fastapi import FastAPI, Depends, HTTPException,status
 from fastapi.security import OAuth2PasswordBearer
 from auth_bearer import JWTBearer
+from functools import wraps
 from utils import create_access_token,create_refresh_token,verify_password,get_hashed_password
+ACCESS_TOKEN_EXPIRE_MINUTES = 30  # 30 minutes
+REFRESH_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7 # 7 days
+ALGORITHM = "HS256"
+JWT_SECRET_KEY = "narsimha"   # should be kept secret
+JWT_REFRESH_SECRET_KEY = "134narsimha"
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
@@ -19,6 +26,23 @@ def get_session():
     finally:
         session.close()
 app=FastAPI()
+
+
+def token_required(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+    
+        payload = jwt.decode(kwargs['dependencies'], JWT_SECRET_KEY, ALGORITHM)
+        user_id = payload['sub']
+        data= kwargs['session'].query(models.TokenTable).filter_by(user_id=user_id,access_toke=kwargs['dependencies'],status=True).first()
+        if data:
+            return func(kwargs['dependencies'],kwargs['session'])
+        
+        else:
+            return {'msg': "Token blocked"}
+        
+    return wrapper
+
 
 @app.post("/register")
 def register_user(user: schemas.UserCreate, session: Session = Depends(get_session)):
@@ -48,16 +72,26 @@ def login(request: schemas.requestdetails, db: Session = Depends(get_session)):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Incorrect password"
         )
+    
+    access=create_access_token(user.id)
+    refresh = create_refresh_token(user.id)
+
+    token_db = models.TokenTable(user_id=user.id,  access_toke=access,  refresh_toke=refresh, status=True)
+    db.add(token_db)
+    db.commit()
+    db.refresh(token_db)
     return {
-        "access_token": create_access_token(user.id),
-        "refresh_token": create_refresh_token(user.id),
+        "access_token": access,
+        "refresh_token": refresh,
     }
 
+
 @app.get('/getusers')
-def getusers(  dependencies=Depends(JWTBearer()),session: Session = Depends(get_session)):
+@token_required
+def getusers( dependencies=Depends(JWTBearer()),session: Session = Depends(get_session)):
     user = session.query(models.User).all()
     return user
-
+    
 
 
 @app.post('/change-password')
@@ -74,3 +108,37 @@ def change_password(request: schemas.changepassword, db: Session = Depends(get_s
     db.commit()
     
     return {"message": "Password changed successfully"}
+
+    
+@app.post('/logout')
+def logout(dependencies=Depends(JWTBearer()), db: Session = Depends(get_session)):
+    token=dependencies
+    payload = jwt.decode(token, JWT_SECRET_KEY, ALGORITHM)
+    user_id = payload['sub']
+    token_record = db.query(models.TokenTable).all()
+    info=[]
+    for record in token_record :
+        print("record",record)
+        if (datetime.utcnow() - record.created_date).days >1:
+            info.append(record.user_id)
+    if info:
+        existing_token = db.query(models.TokenTable).where(TokenTable.user_id.in_(info)).delete() 
+        db.commit()
+        
+    existing_token = db.query(models.TokenTable).filter(models.TokenTable.user_id == user_id, models.TokenTable.access_toke==token).first()
+    if existing_token:
+        existing_token.status=False
+        db.add(existing_token)
+        db.commit()
+        db.refresh(existing_token)
+    return {"message":"Logout Successfully"}  
+
+     
+
+ 
+
+ 
+
+
+
+ 

@@ -22,11 +22,14 @@ def verify_password(password: str, hashed_pass: str) -> bool:
 def create_access_token(subject: Union[str, Any], expires_delta: int = None) -> str:
     if expires_delta is not None:
         expires_delta = datetime.utcnow() + expires_delta
+        print(expires_delta,"////////////////////////////")
     else:
         expires_delta = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        print(expires_delta,"++++++++++++++++++++++")
     
     to_encode = {"exp": expires_delta, "sub": str(subject)}
     encoded_jwt = jwt.encode(to_encode, JWT_SECRET_KEY, ALGORITHM)
+    print(jwt.decode(encoded_jwt, JWT_SECRET_KEY, ALGORITHM),"*&*&*&*&*&*&*&*&*&*&*")
     return encoded_jwt
 
 def create_refresh_token(subject: Union[str, Any], expires_delta: int = None) -> str:
@@ -38,3 +41,16 @@ def create_refresh_token(subject: Union[str, Any], expires_delta: int = None) ->
     to_encode = {"exp": expires_delta, "sub": str(subject)}
     encoded_jwt = jwt.encode(to_encode, JWT_REFRESH_SECRET_KEY, ALGORITHM)
     return encoded_jwt
+
+
+# @app.post('/logout')
+# def logout(dependencies=Depends(JWTBearer()), db: Session = Depends(get_session)):
+#     token=dependencies
+#     payload = jwt.decode(token, JWT_SECRET_KEY, ALGORITHM)
+#     user_id = payload['sub']
+#     existing_token = db.query(models.TokenTable).filter(models.TokenTable.user_id == user_id, models.TokenTable.access_toke==token).first()
+#     existing_token.status=False
+#     db.add(existing_token)
+#     db.commit()
+#     db.refresh(existing_token)
+#     return {"message":"Logout Successfully"}
